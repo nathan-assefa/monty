@@ -1,140 +1,104 @@
 #include "monty.h"
 
 /**
- * * open_file- to open file and analyze
- * * @opcode_file: instruction to be found
- * * @stack: pointer to doubly linked list
+ * interpret - Primary starting point for program
+ * @ac: argument count
+ * @av: argument vector
+ * Return: 1 on success, 0 on failure
  */
-void open_file(char *opcode_file, stack_t **stack)
+int interpret(int ac, char **av)
 {
-	char *token;
-	size_t size = 0;
-	int read;
-	unsigned int line_count = 1;
-	int check;
-	instruct_func check_opcode;
-
-	var_global.file = fopen(opcode_file, "r");
-	if (var_global.file == NULL)
+	if (ac != 2)
 	{
-		fprintf(stderr, "Error: Can't open file %s\n", opcode_file);
-		exit(EXIT_SUCCESS);
+		dprintf(STDERR_FILENO, USAGE);
+		return (EXIT_FAILURE);
 	}
 
-
-	while ((read = getline(&var_global.buffer, &size, var_global.file)) != -1)
+	data()->fp = fopen(av[1], "r");
+	if (!data()->fp)
 	{
-		token = parser(var_global.buffer, line_count);
-		if (token == NULL || token[0] == '#')
-		{
-			line_count++;
-			continue;
-		}
 
-		check_opcode = check_for_opcode(token);
-		if (check_opcode == NULL)
-		{
-			fprintf(stderr, "L%d: unknown instruction %s\n", line_count, token);
-			exit(EXIT_FAILURE);
-		}
-		check_opcode(stack, line_count);
-		line_count++;
-
+		dprintf(STDERR_FILENO, ERR_FILE, av[1]);
+		free_data(1);
+		return (EXIT_FAILURE);
 	}
-	free(var_global.buffer);
-	check = fclose(var_global.file);
-	if (check == -1)
-		exit(-1);
+
+	parse_opcodes();
+
+	return (EXIT_SUCCESS);
 }
 
 /**
- * * parser- to parse the buffer
- * * @buffer: buffer having the contents of the bytcode
- * * @line_number: number of line in monty file
- * * Return: parsed string
+ * parse_opcodes - parses opcodes read from script file
  */
-char *parser(char *buffer, unsigned int line_number)
+void parse_opcodes(void)
 {
-	char *opcode, *push_argument;
+	ssize_t rbytes = 0;
+	size_t n = 0;
+	int i = 0;
 
-	opcode = strtok(buffer, "\n ");
-	if (opcode == NULL)
+	while (1)
 	{
-		return (NULL);
-	}
-	if (strcmp(opcode, "push") == 0)
-	{
-		push_argument = strtok(NULL, "\n ");
+		rbytes = getline(&(data()->line), &n, data()->fp);
+		if (rbytes == -1)
+			break;
 
-		if (_isdigit(push_argument) == 1 && push_argument != NULL)
+		data()->words = strtow(data()->line, " \t\n");
+		if (data()->words && data()->words[0] && data()->words[0][0] != '#')
 		{
-			var_global.push_arg = atoi(push_argument);
+			for (i = 0; data()->words[i]; i++)
+				;
+			data()->num_words = i;
+			exec_opcode(data()->words[0]);
 		}
-		else
-		{
-			fprintf(stderr, "L%d: usage: push integer\n", line_number);
-			exit(EXIT_FAILURE);
-		}
+
+		data()->line_number++;
+		free_data(0);
 	}
 
-	return (opcode);
+	free_data(1);
 }
 
 /**
- * * _isdigit- to know if the charachter is number
- * * @str: pointer to the string
- * * Return: int
+ * exec_opcode - Executes the given opcode if valid
+ * @word: the opcode string
+ * Return: 1 on success, 0 on failure
  */
-int _isdigit(char *str)
+int exec_opcode(char *word)
 {
-	unsigned int i = 0;
-
-	if (str == NULL)
-		return (0);
-
-	if (str[0] == '-')
-	{
-		i++;
-	}
-	if (!isdigit(str[i]))
-		return (0);
-
-	return (1);
-}
-
-/**
- * * check_for_opcode - check if the opcode is valid
- * * @token: opcode to be chacked
- * * Return: instruct_func
- */
-instruct_func check_for_opcode(char *token)
-{
-	int i;
-
-	instruction_t instruct[] = {
-		{"push", _push},
-		{"pall", _pall},
-		{"pint", _pint},
-		{"pop", _pop},
-		{"swap", _swap},
-		{"add", _add},
-		{"nop", _nop},
-		{"sub", _sub},
-		{"mul", _mul},
-		{"div", _div},
-		{"mod", _mod},
-		{"pchar", _pchar},
-		{"pstr", _pstr},
-		{"rotl", _rotl},
-		{"rotr", _rotr},
-		{NULL, NULL},
+	instruction_t opcodes[] = {
+		{"push", opcode_push},
+		{"pall", opcode_pall},
+		{"pint", opcode_pint},
+		{"pop", opcode_pop},
+		{"swap", opcode_swap},
+		{"nop", opcode_nop},
+		{"add", opcode_add},
+		{"sub", opcode_sub},
+		{"div", opcode_div},
+		{"mul", opcode_mul},
+		{"mod", opcode_mod},
+		{"pchar", opcode_pchar},
+		{"pstr", opcode_pstr},
+		{"rotl", opcode_rotl},
+		{"rotr", opcode_rotr},
+		{"stack", opcode_stack},
+		{"queue", opcode_queue},
+		{NULL, NULL}
 	};
 
-	i = 0;
-	while (instruct[i].f != NULL && strcmp(instruct[i].opcode, token) != 0)
-	{
-		i++;
-	}
+	int i = 0;
 
-	return (instruct[i].f);
+	for (; opcodes[i].opcode; i++)
+	{
+		if (!strcmp(word, opcodes[i].opcode))
+		{
+			opcodes[i].f(&data()->stack, data()->line_number);
+			return (1);
+		}
+	}
+	dprintf(STDERR_FILENO, ERR_OPCODE, data()->line_number, word);
+	free_data(1);
+	exit(EXIT_FAILURE);
+	return (0);
 }
