@@ -17,7 +17,7 @@ int main(int ac, char **av)
 		exit(EXIT_FAILURE);
 	}
 
-	open_file(av[1], &stack);
+	read_file(av[1], &stack);
     /* recordar liberar memorias */
 	free_dlistint(stack);
 	return (0);
